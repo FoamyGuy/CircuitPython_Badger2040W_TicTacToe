@@ -1,6 +1,8 @@
 import gc
 import random
 import time
+
+import bitmaptools
 import board
 import displayio
 import vectorio
@@ -12,6 +14,7 @@ import neopixel
 
 STATE_BADGE = 0
 STATE_TIC_TAC_TOE = 1
+STATE_TIC_TAC_TOE_GAMEOVER = 2
 
 CURRENT_STATE = STATE_BADGE
 
@@ -32,7 +35,6 @@ BUTTON_C = 4
 # display setup
 display = board.DISPLAY
 tictactoe_group = displayio.Group()
-
 
 # background color palette
 background_p = displayio.Palette(1)
@@ -86,7 +88,7 @@ class TicTacToeGame(displayio.Group):
         ]
 
         # set starting position of the selector
-        self.selector_position = [2, 1]
+        self.selector_position = [random.randint(0, 2), random.randint(0, 2)]
 
         # move the selector tilegrid to the starting position, but do not refresh yet
         self.place_tilegrid_at_board_position(self.selector_position, self.selector_tg, refresh=False)
@@ -100,6 +102,40 @@ class TicTacToeGame(displayio.Group):
             ["", "", ""],
             ["", "", ""],
         ]
+
+        self.winner_line_polygon = None
+        self.winner_line_palette = displayio.Palette(1)
+        self.winner_line_palette[0] = 0x000000
+
+        self.winner_line_map = {
+            "row-0": ((12, 17), (12, 23), (115, 23), (115, 17)),
+            "row-1": ((12, 57), (12, 63), (115, 63), (115, 57)),
+            "row-2": ((12, 97), (12, 103), (115, 103), (115, 97)),
+            "col-0": ((20, 12), (26, 12), (26, 115), (20, 115)),
+            "col-1": ((58, 12), (64, 12), (64, 115), (58, 115)),
+            "col-2": ((98, 12), (104, 12), (104, 115), (98, 115)),
+            "diag-tld": ((5, 15), (15, 5), (115, 105), (105, 115)),
+            "diag-bru": ((5, 105), (15, 115), (115, 15), (105, 5)),
+        }
+
+    def reset_game(self):
+        while len(self.played_pieces) > 0:
+            self.remove(self.played_pieces.pop())
+        for row_idx in range(3):
+            for i in range(3):
+                self.board_state[row_idx][i] = ""
+
+        print("board state after reset")
+        print(self.board_state)
+        # set starting position of the selector
+        self.selector_position = [random.randint(0, 2), random.randint(0, 2)]
+
+        # move the selector tilegrid to the starting position, but do not refresh yet
+        self.place_tilegrid_at_board_position(self.selector_position, self.selector_tg, refresh=False)
+
+        print(f"inside reset_game() winner line is: {self.winner_line_polygon}")
+        if self.winner_line_polygon is not None:
+            self.remove(self.winner_line_polygon)
 
     def move_selector_up(self):
         if self.selector_position[1] > 0:
@@ -121,13 +157,9 @@ class TicTacToeGame(displayio.Group):
             self.selector_position[0] += 1
             self.place_tilegrid_at_board_position(self.selector_position, self.selector_tg)
 
-    def play_current_move(self):
-        """
-        Place a piece at the selected position based on which turn it is currently.
-        """
-
+    def play_piece_at(self, piece, position, refresh=False):
         # create the right type of TileGrid based on turn
-        if self.turn == "X":
+        if piece == "X":
             piece_tg = displayio.TileGrid(pixel_shader=self.x_bmp.pixel_shader, bitmap=self.x_bmp)
         else:  # O's turn
             piece_tg = displayio.TileGrid(pixel_shader=self.o_bmp.pixel_shader, bitmap=self.o_bmp)
@@ -139,10 +171,17 @@ class TicTacToeGame(displayio.Group):
         self.played_pieces.append(piece_tg)
 
         # move piece TileGrid to the current selected position, but do not refresh yet
-        self.place_tilegrid_at_board_position(self.selector_position, piece_tg, refresh=False)
+        self.place_tilegrid_at_board_position(position, piece_tg, refresh=refresh)
 
         # update the board state with this move
-        self.board_state[self.selector_position[1]][self.selector_position[0]] = self.turn
+        self.board_state[self.selector_position[1]][self.selector_position[0]] = piece
+
+    def play_current_move(self):
+        """
+        Place a piece at the selected position based on which turn it is currently.
+        """
+
+        self.play_piece_at(self.turn, self.selector_position, refresh=False)
 
         # set the turn to next players
         self.turn = "X" if self.turn == "O" else "O"
@@ -159,7 +198,61 @@ class TicTacToeGame(displayio.Group):
             pass
 
         # move the selector TileGrid to the selector_position and refresh
-        self.place_tilegrid_at_board_position(self.selector_position, self.selector_tg, refresh=True)
+        self.place_tilegrid_at_board_position(self.selector_position, self.selector_tg, refresh=False)
+
+    def check_winner(self):
+        winner = None
+        # horizontals:
+        for row_idx, row in enumerate(self.board_state):
+            if row.count(row[0]) == 3 and row[0] != "":
+                winner = row[0]
+                return winner, f"row-{row_idx}"
+        # verticals
+        for col_idx in range(len(self.board_state)):
+            col = []
+            for row in self.board_state:
+                col.append(row[col_idx])
+
+            if col.count(col[0]) == 3 and col[0] != "":
+                winner = col[0]
+                return winner, f"col-{col_idx}"
+        # diagonals
+        top_left_down = []
+        bottom_right_up = []
+
+        for i in range(3):
+            top_left_down.append(self.board_state[i][i])
+            bottom_right_up.append(self.board_state[2 - i][i])
+
+        if top_left_down.count(top_left_down[0]) == 3 and top_left_down[0] != "":
+            winner = top_left_down[0]
+            return winner, f"diag-tld"
+
+        if bottom_right_up.count(bottom_right_up[0]) == 3 and bottom_right_up[0] != "":
+            winner = bottom_right_up[0]
+            return winner, f"diag-bru"
+
+        return None
+
+    def show_winner_line(self, line_type):
+        # if self.winner_line_bmp is None:
+        #     self.winner_line_bmp = displayio.Bitmap(120, 120, 2)
+        #     self.winner_line_tg = displayio.TileGrid(bitmap=self.winner_line_bmp, pixel_shader=self.winner_line_palette)
+        #     self.winner_line_tg.x = 5
+        #     self.winner_line_tg.y = 5
+        #     self.append(self.winner_line_tg)
+        # 
+        # self.winner_line_bmp.fill(0)
+        # x1, y1, x2, y2 = self.winner_line_map[line_type]
+        # bitmaptools.draw_line(self.winner_line_bmp, x1=x1, y1=y1, x2=x2, y2=y2, value=1)
+        # self.display.refresh()
+        if self.winner_line_polygon is None:
+            self.winner_line_polygon = vectorio.Polygon(pixel_shader=self.winner_line_palette,
+                                                        points=list(self.winner_line_map[line_type]), x=0, y=0)
+            self.append(self.winner_line_polygon)
+        else:
+            self.winner_line_polygon.points = list(self.winner_line_map[line_type])
+            self.append(self.winner_line_polygon)
 
     @property
     def empty_spots(self):
@@ -262,6 +355,24 @@ while True:
                     game.move_selector_right()
                 elif event.key_number == 3 and event.released:
                     game.play_current_move()
+
+                    winner = game.check_winner()
+                    if winner:
+                        print("WINNER:")
+                        print(winner)
+                        game.show_winner_line(winner[1])
+                        CURRENT_STATE = STATE_TIC_TAC_TOE_GAMEOVER
+                        display.refresh()
+                        continue
+                    else:
+                        display.refresh()
+        elif CURRENT_STATE == STATE_TIC_TAC_TOE_GAMEOVER:
+            if event:
+                if event.released:
+                    game.reset_game()
+                    CURRENT_STATE = STATE_TIC_TAC_TOE
+                    display.refresh()
+                    continue
         elif CURRENT_STATE == STATE_BADGE:
             if event:
                 if LAST_STATE_CHANGE + CHANGE_STATE_BTN_COOLDOWN < time.monotonic():
@@ -286,4 +397,3 @@ while True:
         print(e)
         time.sleep(display.time_to_refresh + 0.6)
         display.refresh()
-
