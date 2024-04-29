@@ -2,13 +2,15 @@ import gc
 import random
 import time
 
+import bitmaptools
 import board
 import displayio
 import vectorio
 import keypad
 import terminalio
+from adafruit_display_shapes.rect import Rect
 from adafruit_display_text import bitmap_label as label
-
+import neopixel
 import neopixel
 import socketpool
 import wifi
@@ -16,10 +18,8 @@ import wifi
 import foamyguy_nvm_helper as nvm_helper
 from adafruit_httpserver import Server, Route, as_route, Request, Response, FileResponse, GET, POST
 
-
 pool = socketpool.SocketPool(wifi.radio)
 server = Server(pool, "/static", debug=True)
-
 
 STATE_BADGE = 0
 STATE_TIC_TAC_TOE = 1
@@ -51,10 +51,12 @@ background_p[0] = 0xffffff
 
 print(f"width: {display.width}")
 # make a rectangle same size as display and add it to main group
-background_rect = vectorio.Rectangle(pixel_shader=background_p, width=display.width+1, height=display.height, x=0, y=0)
+background_rect = vectorio.Rectangle(pixel_shader=background_p, width=display.width + 1, height=display.height, x=0,
+                                     y=0)
 tictactoe_group.append(background_rect)
 
 session_score = {"X": 0, "O": 0}
+
 
 class TicTacToeGame(displayio.Group):
     """
@@ -310,14 +312,13 @@ badge_tg = displayio.TileGrid(bitmap=badge_odb, pixel_shader=badge_odb.pixel_sha
 badge_group.append(badge_tg)
 
 SESSION_SCORE_TEMPLATE_STR = "Score\nRound:\n X: {}\n O: {}"
-session_score_text = label.Label(terminalio.FONT, 
-                                 text=SESSION_SCORE_TEMPLATE_STR.format(session_score["X"], session_score["O"]), 
+session_score_text = label.Label(terminalio.FONT,
+                                 text=SESSION_SCORE_TEMPLATE_STR.format(session_score["X"], session_score["O"]),
                                  color=BLACK, scale=2)
 
-session_score_text.anchor_point = (0,0)
+session_score_text.anchor_point = (0, 0)
 session_score_text.anchored_position = (134, 2)
 tictactoe_group.append(session_score_text)
-
 
 all_time_score = None
 try:
@@ -327,15 +328,15 @@ except EOFError:
     all_time_score = {"X": 0, "O": 0}
     nvm_helper.save_data(all_time_score, test_run=False)
 
-
 ALL_SCORE_TEMPLATE_STR = "\nAll:\n X: {}\n O: {}"
-all_score_text = label.Label(terminalio.FONT, 
-                                 text=ALL_SCORE_TEMPLATE_STR.format(all_time_score["X"], all_time_score["O"]), 
-                                 color=BLACK, scale=2)
+all_score_text = label.Label(terminalio.FONT,
+                             text=ALL_SCORE_TEMPLATE_STR.format(all_time_score["X"], all_time_score["O"]),
+                             color=BLACK, scale=2)
 
-all_score_text.anchor_point = (1.0,0)
-all_score_text.anchored_position = (display.width-2, 2)
+all_score_text.anchor_point = (1.0, 0)
+all_score_text.anchored_position = (display.width - 2, 2)
 tictactoe_group.append(all_score_text)
+
 
 def set_state(new_state):
     if new_state == STATE_BADGE:
@@ -357,29 +358,32 @@ INDEX_TEMPLATE = None
 with open("static/index.html", "r") as f:
     INDEX_TEMPLATE = f.read()
 
+COLOR_PICKER_TEMPLATE = None
+with open("static/color_picker.html", "r") as f:
+    COLOR_PICKER_TEMPLATE = f.read()
 
-@server.route("/change-neopixel-color", GET)
+
+@server.route("/change-neopixel-color", (GET, POST))
 def change_neopixel_color_handler_query_params(request: Request):
     """Changes the color of the built-in NeoPixel using query/GET params."""
+    if request.method == GET:
 
-    # e.g. /change-neopixel-color?r=255&g=0&b=0
+        hex_rgb = request.query_params.get("neopixel_color")
+        if hex_rgb is not None:
+            hex_rgb = hex_rgb.replace("%23", "0x")
+            # print(f"hex rgb: {hex(int(hex_rgb, 16))}")
+            pixels.fill(int(hex_rgb, 16))
+        else:
+            hex_rgb = ""
+        return Response(request, COLOR_PICKER_TEMPLATE.format(hex_rgb.replace("0x", "#")), content_type="text/html")
 
-    r = request.query_params.get("r") or 0
-    g = request.query_params.get("g") or 0
-    b = request.query_params.get("b") or 0
-
-    pixels.fill((int(r), int(g), int(b)))
-
-    return Response(request, f"Changed NeoPixel to color ({r}, {g}, {b})")
 
 @server.route("/", GET)
 def index_handler(request: Request):
-    
     return Response(request, INDEX_TEMPLATE.format(all_time_score['X'], all_time_score['O']), content_type="text/html")
 
 
 server.start()
-
 
 while True:
     server.poll()
@@ -428,8 +432,10 @@ while True:
 
                             game.show_winner_line(winner[1])
                             CURRENT_STATE = STATE_TIC_TAC_TOE_GAMEOVER
-                            session_score_text.text = SESSION_SCORE_TEMPLATE_STR.format(session_score["X"], session_score["O"])
-                            all_score_text.text = ALL_SCORE_TEMPLATE_STR.format(all_time_score["X"], all_time_score["O"])
+                            session_score_text.text = SESSION_SCORE_TEMPLATE_STR.format(session_score["X"],
+                                                                                        session_score["O"])
+                            all_score_text.text = ALL_SCORE_TEMPLATE_STR.format(all_time_score["X"],
+                                                                                all_time_score["O"])
                             display.refresh()
                             continue
                         else:
