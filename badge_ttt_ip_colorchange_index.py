@@ -324,7 +324,7 @@ badge_group.append(badge_tg)
 SESSION_SCORE_TEMPLATE_STR = "Score\nRound:\n X: {}\n O: {}"
 session_score_text = label.Label(terminalio.FONT,
                                  text=SESSION_SCORE_TEMPLATE_STR.format(session_score["X"], session_score["O"]),
-                                 color=BLACK, scale=2)
+                                 color=BLACK, scale=2, line_spacing=1.1)
 
 session_score_text.anchor_point = (0, 0)
 session_score_text.anchored_position = (134, 2)
@@ -341,12 +341,18 @@ except EOFError:
 ALL_SCORE_TEMPLATE_STR = "\nAll:\n X: {}\n O: {}"
 all_score_text = label.Label(terminalio.FONT,
                              text=ALL_SCORE_TEMPLATE_STR.format(all_time_score["X"], all_time_score["O"]),
-                             color=BLACK, scale=2)
+                             color=BLACK, scale=2, line_spacing=1.1)
 
 all_score_text.anchor_point = (1.0, 0)
 all_score_text.anchored_position = (display.width - 2, 2)
 tictactoe_group.append(all_score_text)
 
+ip_text = label.Label(terminalio.FONT,
+                      text=f"IP: {str(wifi.radio.ipv4_address)}",
+                      color=BLACK)
+ip_text.anchor_point = (1.0, 1.0)
+ip_text.anchored_position = (display.width-2, display.height-2)
+tictactoe_group.append(ip_text)
 
 def set_state(new_state):
     if new_state == STATE_BADGE:
@@ -401,7 +407,6 @@ def index_handler(request: Request):
     return Response(request, INDEX_TEMPLATE.format(hex_rgb.replace("0x", "#"),
                                                    all_time_score['X'],
                                                    all_time_score['O']), content_type="text/html")
-
 
 print(str(wifi.radio.ipv4_address))
 server.start()
